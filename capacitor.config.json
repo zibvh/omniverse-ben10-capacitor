@@ -1,0 +1,9 @@
+{
+  "appId": "com.omniverse.opencity",
+  "appName": "Omniverse Open City",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false
+  }
+}
