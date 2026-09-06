@@ -1,0 +1,81 @@
+name: Build Android APK
+
+# Runs on every push, and can also be triggered manually from the Actions
+# tab. The native android/ project isn't stored in this repo -- it's
+# regenerated fresh from @capacitor/android on every run (npx cap add
+# android), which keeps the repo small and avoids committing any binary
+# boilerplate. Same for the offline three.js/GLTFLoader libs: fetched from
+# npm during the build rather than vendored here.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed so the release step below can publish the APK
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Capacitor dependencies
+        run: npm install
+
+      - name: Fetch offline three.js/GLTFLoader/Draco libs into www/libs
+        run: |
+          mkdir -p www/libs/draco
+          npm install three@0.128.0 --no-save
+          cp node_modules/three/build/three.min.js www/libs/
+          cp node_modules/three/examples/js/loaders/GLTFLoader.js www/libs/
+          cp node_modules/three/examples/js/loaders/DRACOLoader.js www/libs/
+          cp node_modules/three/examples/js/utils/SkeletonUtils.js www/libs/
+          cp node_modules/three/examples/js/libs/draco/draco_decoder.js www/libs/draco/
+          cp node_modules/three/examples/js/libs/draco/draco_decoder.wasm www/libs/draco/
+          cp node_modules/three/examples/js/libs/draco/draco_wasm_wrapper.js www/libs/draco/
+
+      - name: Generate native Android project
+        run: npx cap add android
+
+      - name: Copy web assets into native project
+        run: npx cap copy android
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK as a workflow artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Publish APK to a rolling "latest build" release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: Latest APK build
+          body: Auto-built from commit ${{ github.sha }}
+          make_latest: true
+          files: android/app/build/outputs/apk/debug/*.apk
